@@ -472,7 +472,7 @@ async function verifyAndPrice(selections) {
   const properties = {
     'Shape':                    shape.displayName,
     'Dimensions':               field(dimension, 'label') || dimensionDisplay,
-    'Seating':                  field(dimension, 'seating') || '—',
+    'Seating':                  field(dimension, 'seats') || '—',
     'Top Material':             material.displayName,
     'Base':                     baseDescription,
     'Top Finish':               materialFinish.displayName,
