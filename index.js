@@ -466,8 +466,8 @@ async function verifyAndPrice(selections) {
 
   // ── Line-item properties (stored on the Draft Order line item) ─────────────
   //
-  // Keys starting with _ are internal references — used for lookups but not
-  // displayed to the customer on the Shopify invoice.
+  // These are the customer-facing and internal order details shown in Shopify admin.
+  // All keys are plain text — no underscore prefix — so they display cleanly.
 
   const properties = {
     'Shape':                    shape.displayName,
@@ -478,11 +478,7 @@ async function verifyAndPrice(selections) {
     'Top Finish':               materialFinish.displayName,
     'Edge Profile':             edge.displayName,
     'Thickness':                field(thickness, 'label') || `${field(thickness, 'thickness_mm')} mm`,
-    'Verified Price (ex VAT)':  `£${verifiedPrice.toFixed(2)}`,
-    '_Shape ID':                shape.id,
-    '_Dimension ID':            dimension.id,
-    '_Material ID':             material.id,
-    '_Base Design ID':          baseDesign.id,
+    'Verified Price':           `£${verifiedPrice.toFixed(2)}`,
   };
 
   return {
