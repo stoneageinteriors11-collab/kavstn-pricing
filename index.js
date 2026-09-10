@@ -373,55 +373,35 @@ async function verifyAndPrice(selections) {
     );
   }
 
-  // ── Area calculation ───────────────────────────────────────────────────────
+  // ── Dimension measurements (used for display and base count logic) ──────────
   //
-  // Dimension presets store measurements in centimetres.
-  // We multiply by 10 to work in millimetres, then convert to m² for pricing.
-  //
-  //   round          → circle area  = π × r²
-  //   oval / ellipse → ellipse area = π × (L/2) × (D/2)
-  //   rectangle      → rect area    = L × D
-  //   square         → rect area    = side × side  (length_cm = width_cm)
+  // Fields store values in mm directly.
+  // These are NOT used for area-based pricing — all prices are flat.
 
   const shapeHandle = field(shape, 'shape_handle').toLowerCase();
 
-  // Fields store values in mm directly — no conversion needed.
-  const lengthMm   = numberField(dimension, 'width_mm');    // the longer side
-  const widthMm    = numberField(dimension, 'depth_mm');    // the shorter side
-  const diameterMm = numberField(dimension, 'diameter_mm'); // round/square
+  const lengthMm   = numberField(dimension, 'width_mm');    // the longer side (rectangular)
+  const widthMm    = numberField(dimension, 'depth_mm');    // the shorter side (rectangular)
+  const diameterMm = numberField(dimension, 'diameter_mm'); // round / square
 
-  let areaSqm = 0;
-
-  if (shapeHandle === 'round' && diameterMm > 0) {
-    // Circle: A = π × r²
-    const radiusM = diameterMm / 2 / 1000;
-    areaSqm = Math.PI * radiusM * radiusM;
-
-  } else if ((shapeHandle === 'oval' || shapeHandle === 'ellipse') && lengthMm > 0 && widthMm > 0) {
-    // Ellipse: A = π × (L/2) × (W/2)
-    areaSqm = Math.PI * (lengthMm / 2 / 1000) * (widthMm / 2 / 1000);
-
-  } else if (lengthMm > 0 && widthMm > 0) {
-    // Rectangle / Square: A = L × W  (square has length_cm = width_cm)
-    areaSqm = (lengthMm / 1000) * (widthMm / 1000);
-
-  } else {
+  // Validate that the preset has usable measurements for display purposes
+  if (diameterMm === 0 && (lengthMm === 0 || widthMm === 0)) {
     throw new ClientError(
       'The selected dimension preset has incomplete measurements.'
     );
   }
 
-  // ── Price calculation ──────────────────────────────────────────────────────
+  // ── Price calculation (all flat additions — no area multiplication) ─────────
   //
   // Formula:
   //   total = shape.base_price
-  //         + material.base_price + (material.price_per_sqm × area)
-  //         + dimension.price_adjustment
-  //         + materialFinish.price_adjustment
-  //         + edge.price_adjustment
-  //         + thickness.price_adjustment
-  //
-  // base_material, surface_treatment, base_finish adjustments removed in v4.
+  //         + material.price_per_sqm  (treated as a flat material price)
+  //         + material.base_price     (optional extra flat base; usually 0)
+  //         + dimension.price_adj
+  //         + baseDesign.price_adj
+  //         + materialFinish.price_adj
+  //         + edge.price_adj
+  //         + thickness.price_adj
 
   const adjustments = {
     dimension:      numberField(dimension,      'price_adj'),
@@ -434,10 +414,10 @@ async function verifyAndPrice(selections) {
   const totalAdjustments  = Object.values(adjustments).reduce((sum, v) => sum + v, 0);
   const shapeBasePrice    = numberField(shape,    'base_price');
   const materialBasePrice = numberField(material, 'base_price');
-  const materialPerSqm    = numberField(material, 'price_per_sqm');
+  const materialFlatPrice = numberField(material, 'price_per_sqm'); // flat price, not per-sqm
 
   const verifiedPrice =
-    shapeBasePrice + materialBasePrice + (materialPerSqm * areaSqm) + totalAdjustments;
+    shapeBasePrice + materialBasePrice + materialFlatPrice + totalAdjustments;
 
   if (!Number.isFinite(verifiedPrice) || verifiedPrice <= 0) {
     throw new Error(
@@ -484,7 +464,6 @@ async function verifyAndPrice(selections) {
 
   return {
     price:      Math.round(verifiedPrice * 100) / 100,
-    areaSqm:    Math.round(areaSqm * 1000) / 1000,
     properties,
   };
 }
@@ -626,7 +605,7 @@ app.get('/health', (req, res) => {
 app.post('/price', async (req, res) => {
   try {
     const verified = await verifyAndPrice(req.body.selections);
-    return res.json({ success: true, price: verified.price, area_sqm: verified.areaSqm });
+    return res.json({ success: true, price: verified.price });
   } catch (error) {
     console.error('[KAVSTN] /price error:', error.message);
     return res.status(error.status || 500).json({ success: false, error: error.message });
