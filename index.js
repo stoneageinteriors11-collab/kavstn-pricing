@@ -425,6 +425,7 @@ async function verifyAndPrice(selections) {
 
   const adjustments = {
     dimension:      numberField(dimension,      'price_adj'),
+    baseDesign:     numberField(baseDesign,     'price_adj'),
     materialFinish: numberField(materialFinish, 'price_adj'),
     edge:           numberField(edge,           'price_adj'),
     thickness:      numberField(thickness,      'price_adj'),
