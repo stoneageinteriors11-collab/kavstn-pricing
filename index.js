@@ -717,6 +717,71 @@ app.use((error, req, res, next) => {
   return next(error);
 });
 
+// GET /overlays — returns ALL base_material_overlay entries using the Admin API.
+// Bypasses Liquid's hard 50-entry limit so every material × base combination
+// (currently 79 entries) is available to the configurator's preview renderer.
+app.get('/overlays', async (req, res) => {
+  try {
+    const entries = [];
+    let cursor    = null;
+    let hasMore   = true;
+
+    while (hasMore) {
+      const data = await shopifyGraphQL(`
+        query GetBaseOverlays($cursor: String) {
+          metaobjects(type: "base_material_overlay", first: 250, after: $cursor) {
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              fields {
+                key
+                value
+                reference {
+                  ... on MediaImage {
+                    image { url(transform: { maxWidth: 1200 }) }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `, { cursor });
+
+      const page = data.metaobjects;
+      page.nodes.forEach(node => {
+        let materialHandle = '';
+        let baseHandle     = '';
+        const entry        = {};
+
+        node.fields.forEach(field => {
+          if (field.key === 'material_handle') {
+            materialHandle = field.value || '';
+          } else if (field.key === 'base_handle') {
+            baseHandle = field.value || '';
+          } else if (field.key.startsWith('overlay_')) {
+            const shapeKey = field.key.replace('overlay_', '');
+            entry[shapeKey] = (field.reference && field.reference.image)
+              ? field.reference.image.url
+              : '';
+          }
+        });
+
+        if (materialHandle && baseHandle) {
+          entry.key = materialHandle + '_' + baseHandle;
+          entries.push(entry);
+        }
+      });
+
+      hasMore = page.pageInfo.hasNextPage;
+      cursor  = page.pageInfo.endCursor;
+    }
+
+    return res.json({ success: true, entries });
+  } catch (error) {
+    console.error('[KAVSTN] /overlays error:', error.message);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ── START ─────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
