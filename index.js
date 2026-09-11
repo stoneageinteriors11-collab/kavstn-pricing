@@ -191,6 +191,7 @@ const selectionSchema = {
   shapeId:          'table_shape',
   dimensionId:      'dimension_preset',
   materialId:       'table_material',
+  baseMaterialId:   'table_material',   // same type — user picks base material independently
   baseDesignId:     'base_design',
   materialFinishId: 'material_finish',
   edgeProfileId:    'edge_profile',
@@ -310,7 +311,10 @@ async function verifyAndPrice(selections) {
   // Validate and collect all GIDs
   const ids = entries.map(([key]) => assertMetaobjectGid(selections[key], key));
 
-  if (new Set(ids).size !== ids.length) {
+  // Allow materialId and baseMaterialId to share the same GID (user chose matching top+base).
+  // All other IDs must still be unique to prevent cross-field substitution attacks.
+  const idsExcludingBaseMat = ids.filter((_, i) => entries[i][0] !== 'baseMaterialId');
+  if (new Set(idsExcludingBaseMat).size !== idsExcludingBaseMat.length) {
     throw new ClientError(
       'Each configuration selection must use its own metaobject ID.'
     );
@@ -345,6 +349,7 @@ async function verifyAndPrice(selections) {
   const shape          = selected.shapeId;
   const dimension      = selected.dimensionId;
   const material       = selected.materialId;
+  const baseMaterial   = selected.baseMaterialId;   // may be same metaobject as material
   const baseDesign     = selected.baseDesignId;
   const materialFinish = selected.materialFinishId;
   const edge           = selected.edgeProfileId;
@@ -412,12 +417,17 @@ async function verifyAndPrice(selections) {
   };
 
   const totalAdjustments  = Object.values(adjustments).reduce((sum, v) => sum + v, 0);
-  const shapeBasePrice    = numberField(shape,    'base_price');
-  const materialBasePrice = numberField(material, 'base_price');
-  const materialFlatPrice = numberField(material, 'price_per_sqm'); // flat price, not per-sqm
+  const shapeBasePrice        = numberField(shape,        'base_price');
+  const materialBasePrice     = numberField(material,     'base_price');
+  const materialFlatPrice     = numberField(material,     'price_per_sqm'); // flat price, not per-sqm
+  const baseMaterialBasePrice = numberField(baseMaterial, 'base_price');
+  const baseMaterialFlatPrice = numberField(baseMaterial, 'price_per_sqm'); // flat price for base stone
 
   const verifiedPrice =
-    shapeBasePrice + materialBasePrice + materialFlatPrice + totalAdjustments;
+    shapeBasePrice
+    + materialBasePrice + materialFlatPrice
+    + baseMaterialBasePrice + baseMaterialFlatPrice
+    + totalAdjustments;
 
   if (!Number.isFinite(verifiedPrice) || verifiedPrice <= 0) {
     throw new Error(
@@ -455,6 +465,7 @@ async function verifyAndPrice(selections) {
     'Dimensions':               field(dimension, 'label') || dimensionDisplay,
     'Seating':                  field(dimension, 'seats') || '—',
     'Top Material':             material.displayName,
+    'Base Material':            baseMaterial.displayName,
     'Base':                     baseDescription,
     'Top Finish':               materialFinish.displayName,
     'Edge Profile':             edge.displayName,
