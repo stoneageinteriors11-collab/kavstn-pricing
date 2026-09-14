@@ -1,5 +1,5 @@
 /**
- * KAVSTN Secure Pricing + Draft Order API — v4.0.0
+ * KAVSTN Secure Pricing + Draft Order API — v4.0.1
  *
  * CONFIGURATION OVERVIEW (v4)
  * ────────────────────────────────────────────────────────────────────────────
@@ -587,7 +587,7 @@ function verifyDraftOrderToken(token) {
 app.get('/', (req, res) => {
   return res.json({
     service: 'KAVSTN Secure Pricing API',
-    version: '4.0.0',
+    version: '4.0.1',
     status:  'running',
   });
 });
@@ -793,8 +793,76 @@ app.get('/overlays', async (req, res) => {
   }
 });
 
+// GET /edge-overlays — returns ALL material_edge_overlay entries using the Admin API.
+// Bypasses Liquid's hard 50-entry limit so every material × edge combination
+// is available to the configurator's preview renderer regardless of total count.
+// Entry shape mirrors the Liquid seed: key = "{materialHandle}_{edgeHandle}",
+// plus one field per overlay shape (round, oval, rectangle, ellipse, square,
+// oval_double, rectangle_double, ellipse_double).
+app.get('/edge-overlays', async (req, res) => {
+  try {
+    const entries = [];
+    let cursor    = null;
+    let hasMore   = true;
+
+    while (hasMore) {
+      const data = await shopifyGraphQL(`
+        query GetEdgeOverlays($cursor: String) {
+          metaobjects(type: "material_edge_overlay", first: 250, after: $cursor) {
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              fields {
+                key
+                value
+                reference {
+                  ... on MediaImage {
+                    image { url(transform: { maxWidth: 1200 }) }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `, { cursor });
+
+      const page = data.metaobjects;
+      page.nodes.forEach(node => {
+        let materialHandle = '';
+        let edgeHandle     = '';
+        const entry        = {};
+
+        node.fields.forEach(f => {
+          if (f.key === 'material_handle') {
+            materialHandle = f.value || '';
+          } else if (f.key === 'edge_handle') {
+            edgeHandle = f.value || '';
+          } else if (f.key.startsWith('overlay_')) {
+            const shapeKey = f.key.replace('overlay_', '');
+            entry[shapeKey] = (f.reference && f.reference.image)
+              ? f.reference.image.url
+              : '';
+          }
+        });
+
+        if (materialHandle && edgeHandle) {
+          entry.key = materialHandle + '_' + edgeHandle;
+          entries.push(entry);
+        }
+      });
+
+      hasMore = page.pageInfo.hasNextPage;
+      cursor  = page.pageInfo.endCursor;
+    }
+
+    return res.json({ success: true, entries });
+  } catch (error) {
+    console.error('[KAVSTN] /edge-overlays error:', error.message);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ── START ─────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
-  console.log(`KAVSTN Secure Pricing API v4.0.0 running on port ${PORT}`);
+  console.log(`KAVSTN Secure Pricing API v4.0.1 running on port ${PORT}`);
 });
